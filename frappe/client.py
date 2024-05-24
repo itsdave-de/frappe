@@ -453,9 +453,20 @@ def validate_link(doctype: str, docname: str, fields=None):
 	fields = frappe.parse_json(fields)
 	if not values.name or not fields:
 		return values
+	
+	# determinate, if we fetch from a child doctype, and get its parent for passing it to get_value
+	# so the permissions of its parrent can be checked
+
+	parent=None
+	if frappe.is_table(doctype):
+		# use of get_all to get the the parent, because it doesn`t check for permissions
+		doctype_list = frappe.get_all(doctype, filters={"name": docname}, fields=["parenttype"])
+		# only set a parent if there is exactly one match
+		if len(doctype_list) == 1:
+			parent = doctype_list[0]["parenttype"]
 
 	try:
-		values.update(get_value(doctype, fields, docname))
+		doctype_list = frappe.get_all(doctype, filters={"name": docname}, fields=["parenttype"])
 	except frappe.PermissionError:
 		frappe.clear_last_message()
 		frappe.msgprint(
