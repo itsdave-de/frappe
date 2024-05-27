@@ -213,7 +213,7 @@ def search_widget(
 				)
 			)
 
-			values = frappe.get_list(
+			values = frappe.get_all(
 				doctype,
 				filters=filters,
 				fields=formatted_fields,
