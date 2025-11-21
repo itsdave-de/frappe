@@ -73,6 +73,9 @@ class EmailAccount(Document):
 		else:
 			self.login_id = None
 
+		if self.service == "Sendgrid":
+			self.login_id = "apikey"
+
 		# validate the imap settings
 		if self.enable_incoming and self.use_imap and len(self.imap_folder) <= 0:
 			frappe.throw(_("You need to set one IMAP folder for {0}").format(frappe.bold(self.email_id)))
@@ -466,10 +469,15 @@ class EmailAccount(Document):
 				frappe.db.rollback()
 			except Exception:
 				frappe.db.rollback()
-				self.log_error(title="EmailAccount.receive")
-				if self.use_imap:
-					self.handle_bad_emails(mail.uid, mail.raw_message, frappe.get_traceback())
-				exceptions.append(frappe.get_traceback())
+				try:
+					self.log_error(title="EmailAccount.receive")
+					if self.use_imap:
+						self.handle_bad_emails(mail.uid, mail.raw_message, frappe.get_traceback())
+					exceptions.append(frappe.get_traceback())
+				except Exception:
+					frappe.db.rollback()
+				else:
+					frappe.db.commit()
 			else:
 				frappe.db.commit()
 
@@ -513,22 +521,31 @@ class EmailAccount(Document):
 		return mails
 
 	def handle_bad_emails(self, uid, raw, reason):
+		"""Save the email in Unhandled Email doctype.
+
+		The excessive encoding and decoding is done to handle the case where the
+		email contains invalid characters. This should fail when parsing, not
+		when storing the email in the database.
+		"""
 		if cint(self.use_imap):
 			import email
 
 			try:
 				if isinstance(raw, bytes):
-					mail = email.message_from_bytes(raw)
+					raw_str = raw.decode("ASCII", "replace")
+					mail = email.message_from_string(raw_str)
 				else:
-					mail = email.message_from_string(raw)
+					raw_str = raw.encode(errors="replace").decode()
+					mail = email.message_from_string(raw_str)
 
 				message_id = mail.get("Message-ID")
 			except Exception:
+				raw_str = "can't be parsed"
 				message_id = "can't be parsed"
 
 			unhandled_email = frappe.get_doc(
 				{
-					"raw": raw,
+					"raw": raw_str,
 					"uid": uid,
 					"reason": reason,
 					"message_id": message_id,

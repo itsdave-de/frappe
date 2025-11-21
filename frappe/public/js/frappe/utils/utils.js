@@ -936,18 +936,18 @@ Object.assign(frappe.utils, {
 		let route = route_str.split("/");
 
 		if (route[2] === "Report" || route[0] === "query-report") {
-			return __("{0} Report", [route[3] || route[1]]);
+			return __("{0} Report", [__(route[3]) || __(route[1])]);
 		}
 		if (route[0] === "List") {
-			return __("{0} List", [route[1]]);
+			return __("{0} List", [__(route[1])]);
 		}
 		if (route[0] === "modules") {
-			return __("{0} Modules", [route[1]]);
+			return __("{0} Modules", [__(route[1])]);
 		}
 		if (route[0] === "dashboard") {
-			return __("{0} Dashboard", [route[1]]);
+			return __("{0} Dashboard", [__(route[1])]);
 		}
-		return __(frappe.utils.to_title_case(route[0], true));
+		return __(frappe.utils.to_title_case(__(route[0]), true));
 	},
 	report_column_total: function (values, column, type) {
 		if (column.column.disable_total) {
@@ -1128,7 +1128,7 @@ Object.assign(frappe.utils, {
 		if (value) {
 			let total_duration = frappe.utils.seconds_to_duration(value, duration_options);
 
-			if (total_duration.days) {
+			if (total_duration.days && duration_options.hide_days !== 1) {
 				duration += total_duration.days + __("d", null, "Days (Field: Duration)");
 			}
 			if (total_duration.hours) {
@@ -1139,7 +1139,7 @@ Object.assign(frappe.utils, {
 				duration += duration.length ? " " : "";
 				duration += total_duration.minutes + __("m", null, "Minutes (Field: Duration)");
 			}
-			if (total_duration.seconds) {
+			if (total_duration.seconds && duration_options.hide_seconds !== 1) {
 				duration += duration.length ? " " : "";
 				duration += total_duration.seconds + __("s", null, "Seconds (Field: Duration)");
 			}
@@ -1148,17 +1148,22 @@ Object.assign(frappe.utils, {
 	},
 
 	seconds_to_duration(seconds, duration_options) {
-		const round = seconds > 0 ? Math.floor : Math.ceil;
+		const floor = seconds > 0 ? Math.floor : Math.ceil;
 		const total_duration = {
-			days: round(seconds / 86400), // 60 * 60 * 24
-			hours: round((seconds % 86400) / 3600),
-			minutes: round((seconds % 3600) / 60),
-			seconds: round(seconds % 60),
+			days: floor(seconds / 86400), // 60 * 60 * 24
+			hours: floor((seconds % 86400) / 3600),
+			minutes: floor((seconds % 3600) / 60),
+			seconds: floor(seconds % 60),
 		};
 
 		if (duration_options && duration_options.hide_days) {
-			total_duration.hours = round(seconds / 3600);
+			total_duration.hours = floor(seconds / 3600);
 			total_duration.days = 0;
+		}
+
+		if (duration_options && duration_options.hide_seconds) {
+			total_duration.minutes += Math.round(total_duration.seconds / 60);
+			total_duration.seconds = 0;
 		}
 
 		return total_duration;
@@ -1308,7 +1313,7 @@ Object.assign(frappe.utils, {
 				if (item.is_query_report) {
 					route = "query-report/" + item.name;
 				} else if (!item.doctype) {
-					route = "/report/" + item.name;
+					route = "report/" + item.name;
 				} else {
 					route = frappe.router.slug(item.doctype) + "/view/report/" + item.name;
 				}
@@ -1347,10 +1352,19 @@ Object.assign(frappe.utils, {
 
 		// return number if total digits is lesser than min_length
 		const len = String(number).match(/\d/g).length;
-		if (len < min_length) return number.toString();
+		if (len < min_length) {
+			return number.toString();
+		}
 
 		const number_system = this.get_number_system(country);
 		let x = Math.abs(Math.round(number));
+
+		// if rounding was sufficient to get below min_length, return the rounded number
+		const x_string = x.toString();
+		if (x_string.length < min_length) {
+			return x_string;
+		}
+
 		for (const map of number_system) {
 			if (x >= map.divisor) {
 				let result = number / map.divisor;
@@ -1676,9 +1690,6 @@ Object.assign(frappe.utils, {
 
 	debug: {
 		watch_property(obj, prop, callback = console.trace) {
-			if (!frappe.boot.developer_mode) {
-				return;
-			}
 			console.warn("Adding property watcher, make sure to remove it after debugging.");
 
 			// Adapted from https://stackoverflow.com/a/11658693

@@ -7,6 +7,7 @@ Session bootstraps info needed by common client side activities including
 permission, homepage, default variables, system defaults etc
 """
 import json
+from datetime import datetime, timezone
 from urllib.parse import unquote
 
 import redis
@@ -44,16 +45,17 @@ def clear_sessions(user=None, keep_current=False, device=None, force=False):
 	if force:
 		reason = "Force Logged out by the user"
 
-	for sid in get_sessions_to_clear(user, keep_current, device):
+	for sid in get_sessions_to_clear(user, keep_current, device, force):
 		delete_session(sid, reason=reason)
 
 
-def get_sessions_to_clear(user=None, keep_current=False, device=None):
+def get_sessions_to_clear(user=None, keep_current=False, device=None, force=False):
 	"""Returns sessions of the current user. Called at login / logout
 
 	:param user: user name (default: current user)
 	:param keep_current: keep current session (default: false)
 	:param device: delete sessions of this device (default: desktop, mobile)
+	:param force: ignore simultaneous sessions count, log the user out of all except current (default: false)
 	"""
 	if not user:
 		user = frappe.session.user
@@ -65,14 +67,15 @@ def get_sessions_to_clear(user=None, keep_current=False, device=None):
 		device = (device,)
 
 	offset = 0
-	if user == frappe.session.user:
+	if not force and user == frappe.session.user:
 		simultaneous_sessions = frappe.db.get_value("User", user, "simultaneous_sessions") or 1
 		offset = simultaneous_sessions
 
 	session = frappe.qb.DocType("Sessions")
 	session_id = frappe.qb.from_(session).where((session.user == user) & (session.device.isin(device)))
 	if keep_current:
-		offset = max(0, offset - 1)
+		if not force:
+			offset = max(0, offset - 1)
 		session_id = session_id.where(session.sid != frappe.session.sid)
 
 	query = (
@@ -86,7 +89,7 @@ def delete_session(sid=None, user=None, reason="Session Expired"):
 	from frappe.core.doctype.activity_log.feed import logout_feed
 
 	if frappe.flags.read_only:
-		# This isn't manually initated logout, most likely user's cookies were expired in such case
+		# This isn't manually initiated logout, most likely user's cookies were expired in such case
 		# we should just ignore it till database is back up again.
 		return
 
@@ -206,7 +209,15 @@ def generate_csrf_token():
 class Session:
 	__slots__ = ("user", "device", "user_type", "full_name", "data", "time_diff", "sid")
 
-	def __init__(self, user, resume=False, full_name=None, user_type=None):
+	def __init__(
+		self,
+		user: str,
+		resume: bool = False,
+		full_name: str | None = None,
+		user_type: str | None = None,
+		session_end: str | None = None,
+		audit_user: str | None = None,
+	):
 		self.sid = cstr(frappe.form_dict.get("sid") or unquote(frappe.request.cookies.get("sid", "Guest")))
 		self.user = user
 		self.device = frappe.form_dict.get("device") or "desktop"
@@ -224,7 +235,7 @@ class Session:
 		else:
 			if self.user:
 				self.validate_user()
-				self.start()
+				self.start(session_end, audit_user)
 
 	def validate_user(self):
 		if not frappe.get_cached_value("User", self.user, "enabled"):
@@ -233,7 +244,7 @@ class Session:
 				frappe.ValidationError,
 			)
 
-	def start(self):
+	def start(self, session_end: str | None = None, audit_user: str | None = None):
 		"""start a new session"""
 		# generate sid
 		if self.user == "Guest":
@@ -245,11 +256,19 @@ class Session:
 		self.sid = self.data.sid = sid
 		self.data.data.user = self.user
 		self.data.data.session_ip = frappe.local.request_ip
+
+		if session_end:
+			self.data.data.session_end = session_end
+
+		if audit_user:
+			self.data.data.audit_user = audit_user
+
 		if self.user != "Guest":
 			self.data.data.update(
 				{
 					"last_updated": frappe.utils.now(),
 					"session_expiry": get_expiry_period(self.device),
+					"creation": frappe.utils.now(),
 					"full_name": self.full_name,
 					"user_type": self.user_type,
 					"device": self.device,
@@ -348,7 +367,10 @@ class Session:
 			)
 			expiry = get_expiry_in_seconds(session_data.get("session_expiry"))
 
-			if self.time_diff > expiry:
+			if self.time_diff > expiry or (
+				(session_end := session_data.get("session_end"))
+				and datetime.now(tz=timezone.utc) > datetime.fromisoformat(session_end)
+			):
 				self._delete_session()
 				data = None
 

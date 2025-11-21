@@ -8,6 +8,7 @@ from shutil import which
 import click
 
 import frappe
+import frappe.commands
 from frappe.commands import get_site, pass_context
 from frappe.coverage import CodeCoverage
 from frappe.exceptions import SiteNotSpecifiedError
@@ -916,15 +917,15 @@ def run_ui_tests(
 		click.secho("Installing Cypress...", fg="yellow")
 		packages = " ".join(
 			[
-				"cypress@^13",
-				"@4tw/cypress-drag-drop@^2",
-				"cypress-real-events",
-				"@testing-library/cypress@^10",
+				"cypress@13.10.0",
+				"@4tw/cypress-drag-drop@2.2.5",
+				"cypress-real-events@1.12.0",
+				"@testing-library/cypress@10.0.1",
 				"@testing-library/dom@8.17.1",
-				"@cypress/code-coverage@^3",
+				"@cypress/code-coverage@3.12.39",
 			]
 		)
-		frappe.commands.popen(f"yarn add {packages} --no-lockfile")
+		frappe.commands.popen(f"yarn add {packages} --no-lockfile", raise_err=True)
 
 	# run for headless mode
 	run_or_open = "run --browser chrome" if headless else "open"
@@ -940,7 +941,11 @@ def run_ui_tests(
 		formatted_command += " " + " ".join(cypressargs)
 
 	click.secho("Running Cypress...", fg="yellow")
-	frappe.commands.popen(formatted_command, cwd=app_base_path, raise_err=True)
+	try:
+		frappe.commands.popen(formatted_command, cwd=app_base_path, raise_err=True)
+	except subprocess.CalledProcessError as e:
+		click.secho("Cypress tests failed", fg="red")
+		raise click.exceptions.Exit(1) from e
 
 
 @click.command("serve")
@@ -1026,6 +1031,14 @@ def request(context, args=None, path=None):
 @click.option("--no-git", is_flag=True, default=False, help="Do not initialize git repository for the app")
 def make_app(destination, app_name, no_git=False):
 	"Creates a boilerplate app"
+	from frappe.utils import get_sites
+
+	if app_name in get_sites():
+		click.secho(
+			f"Your bench has a site called {app_name}, please choose another name for the app.", fg="red"
+		)
+		sys.exit(1)
+
 	from frappe.utils.boilerplate import make_boilerplate
 
 	make_boilerplate(destination, app_name, no_git=no_git)

@@ -68,12 +68,10 @@ class RateLimiter:
 		headers = {
 			"X-RateLimit-Reset": self.reset,
 			"X-RateLimit-Limit": self.limit,
-			"X-RateLimit-Remaining": self.remaining,
+			"X-RateLimit-Remaining": round(self.remaining, -6),
 		}
 		if self.rejected:
 			headers["Retry-After"] = self.reset
-		else:
-			headers["X-RateLimit-Used"] = self.duration
 
 		return headers
 
@@ -123,7 +121,7 @@ def rate_limit(
 
 			ip = frappe.local.request_ip if ip_based is True else None
 
-			user_key = frappe.form_dict[key] if key else None
+			user_key = frappe.form_dict.get(key, "")
 
 			identity = None
 

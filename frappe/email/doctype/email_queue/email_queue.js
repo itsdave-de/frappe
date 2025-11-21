@@ -9,10 +9,18 @@ frappe.ui.form.on("Email Queue", {
 					method: "frappe.email.doctype.email_queue.email_queue.send_now",
 					args: {
 						name: frm.doc.name,
+						force_send: true,
 					},
 					btn: button,
 					callback: function () {
 						frm.reload_doc();
+						if (cint(frappe.sys_defaults.suspend_email_queue)) {
+							frappe.show_alert(
+								__(
+									"Email queue is currently suspended. Resume to automatically send other emails."
+								)
+							);
+						}
 					},
 				});
 			});

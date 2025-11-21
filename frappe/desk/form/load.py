@@ -12,7 +12,7 @@ from frappe import _, _dict
 from frappe.desk.form.document_follow import is_document_followed
 from frappe.model.utils import is_virtual_doctype
 from frappe.model.utils.user_settings import get_user_settings
-from frappe.permissions import get_doc_permissions
+from frappe.permissions import check_doctype_permission, get_doc_permissions
 from frappe.utils.data import cstr
 
 
@@ -31,16 +31,19 @@ def getdoc(doctype, name, user=None):
 		name = doctype
 
 	if not is_virtual_doctype(doctype) and not frappe.db.exists(doctype, name):
+		check_doctype_permission(doctype)
 		return []
 
 	doc = frappe.get_doc(doctype, name)
-	run_onload(doc)
 
 	if not doc.has_permission("read"):
+		check_doctype_permission(doctype)
 		frappe.flags.error_message = _("Insufficient Permission for {0}").format(
-			frappe.bold(doctype + " " + name)
+			frappe.bold(_(doctype) + " " + name)
 		)
 		raise frappe.PermissionError(("read", doctype, name))
+
+	run_onload(doc)
 
 	# ignores system setting (apply_perm_level_on_api_calls) unconditionally to maintain backward compatibility
 	doc.apply_fieldlevel_read_permissions()
@@ -198,7 +201,7 @@ def get_attachments(dt, dn):
 def get_versions(doc):
 	return frappe.get_all(
 		"Version",
-		filters=dict(ref_doctype=doc.doctype, docname=doc.name),
+		filters=dict(ref_doctype=doc.doctype, docname=str(doc.name)),
 		fields=["name", "owner", "creation", "data"],
 		limit=10,
 		order_by="creation desc",
@@ -425,19 +428,19 @@ def get_title_values_for_link_and_dynamic_link_fields(doc, link_fields=None):
 		link_fields = meta.get_link_fields() + meta.get_dynamic_link_fields()
 
 	for field in link_fields:
-		if not doc.get(field.fieldname):
+		link_docname = getattr(doc, field.fieldname, None)
+
+		if not link_docname:
 			continue
 
 		doctype = field.options if field.fieldtype == "Link" else doc.get(field.options)
 
-		meta = frappe.get_meta(doctype)
-		if not meta or not (meta.title_field and meta.show_title_field_in_link):
+		meta = frappe.get_meta(doctype) if doctype else None
+		if not meta or not meta.title_field or not meta.show_title_field_in_link:
 			continue
 
-		link_title = frappe.db.get_value(
-			doctype, doc.get(field.fieldname), meta.title_field, cache=True, order_by=None
-		)
-		link_titles.update({doctype + "::" + doc.get(field.fieldname): link_title})
+		link_title = frappe.db.get_value(doctype, link_docname, meta.title_field, cache=True, order_by=None)
+		link_titles.update({doctype + "::" + link_docname: link_title})
 
 	return link_titles
 

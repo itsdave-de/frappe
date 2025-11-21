@@ -187,7 +187,11 @@ frappe.router = {
 				}
 			}
 			if (!frappe.workspaces[private_workspace]) {
-				frappe.msgprint(__("Workspace <b>{0}</b> does not exist", [route[1]]));
+				frappe.msgprint(
+					__("Workspace <b>{0}</b> does not exist", [
+						frappe.utils.xss_sanitise(route[1]),
+					])
+				);
 				return ["Workspaces"];
 			}
 			route = ["Workspaces", "private", frappe.workspaces[private_workspace].title];
@@ -228,11 +232,15 @@ frappe.router = {
 			} else if (frappe.model.is_single(doctype_route.doctype)) {
 				route = ["Form", doctype_route.doctype, doctype_route.doctype];
 			} else if (meta.default_view) {
-				route = [
-					"List",
-					doctype_route.doctype,
-					this.list_views_route[meta.default_view.toLowerCase()],
-				];
+				if (meta.default_view === "Tree") {
+					route = ["Tree", doctype_route.doctype];
+				} else {
+					route = [
+						"List",
+						doctype_route.doctype,
+						this.list_views_route[meta.default_view.toLowerCase()],
+					];
+				}
 			} else {
 				route = ["List", doctype_route.doctype, "List"];
 			}

@@ -8,12 +8,15 @@ import xlrd
 from openpyxl import load_workbook
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
+from openpyxl.workbook.child import INVALID_TITLE_REGEX
 
 import frappe
 from frappe import _
 from frappe.utils.html_utils import unescape_html
 
-ILLEGAL_CHARACTERS_RE = re.compile(r"[\000-\010]|[\013-\014]|[\016-\037]")
+ILLEGAL_CHARACTERS_RE = re.compile(
+	r"[\000-\010]|[\013-\014]|[\016-\037]|\uFEFF|\uFFFE|\uFFFF|[\uD800-\uDFFF]"
+)
 
 
 # return xlsx file object
@@ -22,7 +25,8 @@ def make_xlsx(data, sheet_name, wb=None, column_widths=None):
 	if wb is None:
 		wb = openpyxl.Workbook(write_only=True)
 
-	ws = wb.create_sheet(sheet_name, 0)
+	sheet_name_sanitized = INVALID_TITLE_REGEX.sub(" ", sheet_name)
+	ws = wb.create_sheet(sheet_name_sanitized, 0)
 
 	for i, column_width in enumerate(column_widths):
 		if column_width:

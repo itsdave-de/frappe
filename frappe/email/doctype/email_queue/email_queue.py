@@ -123,9 +123,9 @@ class EmailQueue(Document):
 
 		return True
 
-	def send(self, smtp_server_instance: SMTPServer = None):
+	def send(self, smtp_server_instance: SMTPServer = None, force_send: bool = False):
 		"""Send emails to recipients."""
-		if not self.can_send_now():
+		if not self.can_send_now() and not force_send:
 			return
 
 		with SendMailContext(self, smtp_server_instance) as ctx:
@@ -211,6 +211,7 @@ class SendMailContext:
 		self.sent_to_atleast_one_recipient = any(
 			rec.recipient for rec in self.queue_doc.recipients if rec.is_mail_sent()
 		)
+		self.email_account_doc = None
 
 	def fetch_smtp_server(self):
 		self.email_account_doc = self.queue_doc.get_email_account(raise_error=True)
@@ -229,7 +230,7 @@ class SendMailContext:
 			smtplib.SMTPHeloError,
 			JobTimeoutException,
 		]
-		trace = "".join(traceback.format_tb(exc_tb)) if exc_tb else None
+		trace = frappe.get_traceback()
 
 		if not self.retain_smtp_session:
 			self.smtp_server.quit()
@@ -291,7 +292,11 @@ class SendMailContext:
 		return message
 
 	def get_tracker_str(self) -> str:
-		if frappe.conf.use_ssl and self.email_account_doc.track_email_status:
+		if (
+			self.email_account_doc
+			and self.email_account_doc.track_email_status
+			and self.queue_doc.communication
+		):
 			tracker_url_html = f'<img src="{get_url()}/api/method/frappe.core.doctype.communication.email.mark_email_as_seen?name={self.queue_doc.communication}"/>'
 			return quopri.encodestring(tracker_url_html.encode()).decode()
 		return ""
@@ -398,11 +403,11 @@ def bulk_retry(queues):
 
 
 @frappe.whitelist()
-def send_now(name):
+def send_now(name, force_send: bool = False):
 	record = EmailQueue.find(name)
 	if record:
 		record.check_permission()
-		record.send()
+		record.send(force_send=force_send)
 
 
 @frappe.whitelist()

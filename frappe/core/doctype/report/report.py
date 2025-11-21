@@ -131,7 +131,7 @@ class Report(Document):
 
 		# automatically set as prepared
 		execution_time = (datetime.datetime.now() - start_time).total_seconds()
-		if execution_time > threshold and not self.prepared_report:
+		if execution_time > threshold and not self.prepared_report and not frappe.conf.developer_mode:
 			frappe.enqueue(enable_prepared_report, report=self.name)
 
 		frappe.cache().hset("report_execution_time", self.name, execution_time)
@@ -343,9 +343,17 @@ class Report(Document):
 
 		self.db_set("disabled", cint(disable))
 
+	@frappe.whitelist()
+	def enable_prepared_report(self):
+		enable_prepared_report(self.name)
+		frappe.msgprint(_("Prepared Report Enabled"))
+
 
 def is_prepared_report_disabled(report):
-	return frappe.db.get_value("Report", report, "disable_prepared_report") or 0
+	return (
+		frappe.db.get_value("Report", report, "disable_prepared_report")
+		and not frappe.db.get_value("Report", report, "prepared_report")
+	) or 0
 
 
 def get_report_module_dotted_path(module, report_name):
@@ -381,3 +389,4 @@ def get_group_by_column_label(args, meta):
 
 def enable_prepared_report(report: str):
 	frappe.db.set_value("Report", report, "prepared_report", 1)
+	frappe.db.set_value("Report", report, "disable_prepared_report", 0)

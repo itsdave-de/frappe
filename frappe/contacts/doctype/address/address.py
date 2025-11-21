@@ -17,9 +17,8 @@ class Address(Document):
 		self.flags.linked = False
 
 	def autoname(self):
-		if not self.address_title:
-			if self.links:
-				self.address_title = self.links[0].link_name
+		if not self.address_title and self.links:
+			self.address_title = self.links[0].link_title or self.links[0].link_name
 
 		if self.address_title:
 			self.name = cstr(self.address_title).strip() + "-" + cstr(_(self.address_type)).strip()
@@ -248,9 +247,21 @@ def address_query(doctype, txt, searchfield, start, page_len, filters):
 		else:
 			search_condition += f" or `tabAddress`.`{field}` like %(txt)s"
 
+	# Use custom title field if set
+	if meta.show_title_field_in_link and meta.title_field:
+		title = f"`tabAddress`.{meta.title_field}"
+	else:
+		title = "`tabAddress`.city"
+
+	# Get additional search fields
+	if searchfields:
+		extra_query_fields = ",".join([f"`tabAddress`.{field}" for field in searchfields])
+	else:
+		extra_query_fields = "`tabAddress`.country"
+
 	return frappe.db.sql(
 		"""select
-			`tabAddress`.name, `tabAddress`.city, `tabAddress`.country
+			`tabAddress`.name, {title}, {extra_query_fields}
 		from
 			`tabAddress`
 		join `tabDynamic Link`
@@ -272,6 +283,8 @@ def address_query(doctype, txt, searchfield, start, page_len, filters):
 			mcond=get_match_cond(doctype),
 			search_condition=search_condition,
 			condition=condition or "",
+			title=title,
+			extra_query_fields=extra_query_fields,
 		),
 		{
 			"txt": "%" + txt + "%",
