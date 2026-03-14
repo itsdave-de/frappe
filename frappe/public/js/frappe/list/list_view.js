@@ -811,7 +811,7 @@ frappe.views.ListView = class ListView extends frappe.views.BaseList {
 
 			if (df.fieldtype === "Image") {
 				html = df.options
-					? `<img src="${doc[df.options]}"
+					? `<img src="${frappe.utils.escape_html(doc[df.options])}"
 					style="max-height: 30px; max-width: 100%;">`
 					: `<div class="missing-image small">
 						${frappe.utils.icon("restriction")}
@@ -1772,8 +1772,11 @@ frappe.views.ListView = class ListView extends frappe.views.BaseList {
 			})
 			.then((actions) => {
 				Object.keys(this.workflow_action_items).forEach((key) => {
-					this.workflow_action_items[key].removeClass("disabled");
-					this.workflow_action_items[key].toggle(actions.includes(key));
+					const $link = this.workflow_action_items[key];
+					const $item = $link?.closest("li");
+					$link?.removeClass("disabled");
+					$link?.toggle(actions.includes(key));
+					$item?.toggle(actions.includes(key));
 				});
 			});
 	}
